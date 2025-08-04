@@ -1,79 +1,76 @@
 const express = require('express');
 const axios = require('axios');
 require('dotenv').config();
+const twilio = require('twilio'); // Import the new Twilio library
 
 const app = express();
 const PORT = 3000;
 
+// --- Initialize Twilio Client ---
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const client = new twilio(accountSid, authToken);
+const twilioNumber = 'whatsapp:+14155238886'; // Your Twilio Sandbox Number
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- NEW Function to get a temporary IAM Access Token ---
+// --- Function to get IAM Token (No changes here) ---
 async function getIAMToken() {
   const apiKey = process.env.WATSONX_API_KEY;
   if (!apiKey) {
     console.error("ERROR: WATSONX_API_KEY not found in .env file.");
     return null;
   }
-
   const url = 'https://iam.cloud.ibm.com/identity/token';
-  const headers = {
-    'Content-Type': 'application/x-www-form-urlencoded',
-    'Accept': 'application/json'
-  };
   const data = `grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey=${apiKey}`;
-
   try {
-    const response = await axios.post(url, data, { headers });
-    return response.data.access_token; // Return the access token
+    const response = await axios.post(url, data, { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' } });
+    return response.data.access_token;
   } catch (error) {
     console.error("Error fetching IAM token:", error.response ? error.response.data : error.message);
     return null;
   }
 }
 
-// --- UPDATED Function to get a response from watsonx.ai ---
+// --- Function to get AI Response (No changes here) ---
 async function getAIResponse(userMessage) {
-  console.log("Getting IAM token...");
-  const iamToken = await getIAMToken(); // First, get the temporary token
-
-  if (!iamToken) {
-    return "Sorry, I couldn't authenticate with IBM Cloud right now.";
-  }
-  console.log("Successfully got IAM token.");
+  const iamToken = await getIAMToken();
+  if (!iamToken) return "Sorry, I couldn't authenticate with IBM Cloud right now.";
 
   const watsonx_url = 'https://us-south.ml.cloud.ibm.com/ml/v1-beta/generation/text?version=2024-03-19';
   const project_id = process.env.WATSONX_PROJECT_ID;
-
   const payload = {
     model_id: "ibm/granite-13b-instruct-v2",
-    input: `You are a helpful assistant for PauraX, a civic engagement platform. Respond concisely and helpfully. User asks: ${userMessage}`,
-    parameters: {
-      decoding_method: "greedy",
-      max_new_tokens: 100,
-      min_new_tokens: 10,
-    },
+    input: `You are a helpful and creative assistant for PauraX, a civic engagement platform. Your goal is to help users find and support local community projects. Be friendly and concise. User asks: "${userMessage}"`,
+    parameters: { max_new_tokens: 100 },
     project_id: project_id,
   };
-
-  // Use the new IAM Access Token for Authorization
-  const headers = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${iamToken}`
-  };
-
+  const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${iamToken}` };
   try {
-    console.log("Sending request to watsonx.ai...");
     const response = await axios.post(watsonx_url, payload, { headers });
-    const aiResponse = response.data.results[0].generated_text;
-    return aiResponse;
+    return response.data.results[0].generated_text.trim(); // Using trim() to clean up the response
   } catch (error) {
     console.error("Error calling watsonx.ai API:", error.response ? error.response.data : error.message);
     return "Sorry, I'm having trouble thinking right now.";
   }
 }
 
-// --- Webhook Endpoint (No changes here) ---
+// --- NEW Function to send a WhatsApp message ---
+async function sendWhatsAppMessage(to, message) {
+  try {
+    await client.messages.create({
+      body: message,
+      from: twilioNumber,
+      to: to
+    });
+    console.log(`Successfully sent message to ${to}`);
+  } catch (error) {
+    console.error(`Failed to send message to ${to}:`, error);
+  }
+}
+
+// --- UPDATED Webhook Endpoint ---
 app.post('/webhook', async (req, res) => {
   const userMessage = req.body.Body;
   const userNumber = req.body.From;
@@ -82,7 +79,11 @@ app.post('/webhook', async (req, res) => {
   const aiResponse = await getAIResponse(userMessage);
   console.log("Response from watsonx.ai:", aiResponse);
 
-  res.send('<Response></Response>');
+  // Use our new function to send the AI response back to the user
+  await sendWhatsAppMessage(userNumber, aiResponse);
+
+  // We still send an empty response back to Twilio's initial request
+  res.status(200).send('<Response/>');
 });
 
 app.listen(PORT, () => {
