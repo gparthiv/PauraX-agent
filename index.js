@@ -1,21 +1,23 @@
 const express = require('express');
 const axios = require('axios');
 require('dotenv').config();
-const twilio = require('twilio'); // Import the new Twilio library
+const twilio = require('twilio');
 
 const app = express();
 const PORT = 3000;
 
-// --- Initialize Twilio Client ---
+// --- Initialize Twilio Client (No changes here) ---
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const client = new twilio(accountSid, authToken);
-const twilioNumber = 'whatsapp:+14155238886'; // Your Twilio Sandbox Number
+const twilioNumber = 'whatsapp:+14155238886';
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- Function to get IAM Token (No changes here) ---
+// --- All helper functions (getIAMToken, getAIResponse, sendWhatsAppMessage) are the same. ---
+// --- I'm omitting them here for brevity, but leave them in your file. ---
+
 async function getIAMToken() {
   const apiKey = process.env.WATSONX_API_KEY;
   if (!apiKey) {
@@ -33,7 +35,6 @@ async function getIAMToken() {
   }
 }
 
-// --- Function to get AI Response (No changes here) ---
 async function getAIResponse(userMessage) {
   const iamToken = await getIAMToken();
   if (!iamToken) return "Sorry, I couldn't authenticate with IBM Cloud right now.";
@@ -49,14 +50,13 @@ async function getAIResponse(userMessage) {
   const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${iamToken}` };
   try {
     const response = await axios.post(watsonx_url, payload, { headers });
-    return response.data.results[0].generated_text.trim(); // Using trim() to clean up the response
+    return response.data.results[0].generated_text.trim();
   } catch (error) {
     console.error("Error calling watsonx.ai API:", error.response ? error.response.data : error.message);
     return "Sorry, I'm having trouble thinking right now.";
   }
 }
 
-// --- NEW Function to send a WhatsApp message ---
 async function sendWhatsAppMessage(to, message) {
   try {
     await client.messages.create({
@@ -70,21 +70,32 @@ async function sendWhatsAppMessage(to, message) {
   }
 }
 
+
 // --- UPDATED Webhook Endpoint ---
 app.post('/webhook', async (req, res) => {
-  const userMessage = req.body.Body;
   const userNumber = req.body.From;
-  console.log(`Webhook received! Message from ${userNumber}:`, userMessage);
+  let responseMessage;
 
-  const aiResponse = await getAIResponse(userMessage);
-  console.log("Response from watsonx.ai:", aiResponse);
+  // Check if the incoming message contains media
+  if (req.body.NumMedia > 0) {
+    console.log(`Image received from ${userNumber}`);
+    // This is our "Demo Magic" response for any image
+    responseMessage = "Thank you for submitting a photo! I've analyzed the image and identified a potential civic issue. A new micro-investment project is being created and citizens in the area will be notified shortly.";
 
-  // Use our new function to send the AI response back to the user
-  await sendWhatsAppMessage(userNumber, aiResponse);
+  } else {
+    // If it's a regular text message, use the AI
+    const userMessage = req.body.Body;
+    console.log(`Webhook received! Message from ${userNumber}:`, userMessage);
+    responseMessage = await getAIResponse(userMessage);
+    console.log("Response from watsonx.ai:", responseMessage);
+  }
 
-  // We still send an empty response back to Twilio's initial request
+  // Send the appropriate response back to the user
+  await sendWhatsAppMessage(userNumber, responseMessage);
+
   res.status(200).send('<Response/>');
 });
+
 
 app.listen(PORT, () => {
   console.log(`PauraX server is running and listening on http://localhost:${PORT}`);
