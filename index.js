@@ -2,15 +2,20 @@ const express = require('express');
 const axios = require('axios');
 require('dotenv').config();
 const twilio = require('twilio');
+const fs = require('fs'); // Using the File System module to read/write our db
 
 const app = express();
 const PORT = 3000;
 
-// --- Initialize Clients & Constants ---
+// --- Initialize Clients, Constants, and "Memory" ---
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioClient = new twilio(accountSid, authToken);
 const twilioNumber = 'whatsapp:+14155238886';
+const dbPath = './db.json'; // The path to our mock database
+
+// Simple in-memory "short-term memory" to track conversations
+const userState = {};
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -24,7 +29,7 @@ async function getIAMToken(apiKey) {
     const url = 'https://iam.cloud.ibm.com/identity/token';
     const data = `grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey=${apiKey}`;
     try {
-        const response = await axios.post(url, data, { headers: { 'Content-Type': 'application/x--form-urlencoded' } });
+        const response = await axios.post(url, data, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
         return response.data.access_token;
     } catch (error) {
         console.error("Error fetching IAM token:", error.response ? error.response.data : error.message);
@@ -41,35 +46,7 @@ async function getAIResponse(userMessage) {
     const project_id = process.env.WATSONX_PROJECT_ID;
     const payload = {
         model_id: "ibm/granite-13b-instruct-v2",
-        input: `You are the "PauraX Guide", a friendly and helpful AI assistant for the PauraX platform. Your tone should be encouraging and simple to understand for all users.
-
-<context>
---- About PauraX ---
-- Project Name: PauraX, an AI-Powered Civic Investment & Rewards Platform.
-- Problem It Solves: In India, not everyone pays income tax, putting financial pressure on the middle class to fund public development. PauraX offers a new way for ALL citizens to contribute.
-- How it Works: Citizens use PauraX to make small investments in hyperlocal public goods projects (e.g., new park benches, solar lights, small community parks).
-- The Goal: To encourage civic pride, increase transparency, and decentralize participation in public development.
-
---- The Reward System ---
-- What Users Get: For contributing to projects, users earn a non-monetary reward called "Civic Coins".
-- Value of Coins: Civic Coins can be redeemed for real-world benefits at government facilities, such as discounts on public transport or rebates on local taxes.
-- The Wallet: Users can track their Civic Coin balance, their community impact score, and browse projects on a Web Dashboard Wallet.
-
---- Your Role as the AI Agent ---
-- Your main function is to help users through a WhatsApp chat.
-- You can help users discover local projects they can invest in.
-- You can answer questions about how PauraX works, about Civic Coins, and about the impact of projects.
-- You should provide civic education and gentle "nudges" to encourage participation.
-</context>
-
-Your task is to be a helpful guide. Your answers must be based *only* on the information in the <context> block above. Keep your answers concise and clear for a WhatsApp chat.
-
-Here is the user's question:
-<user_question>
-${userMessage}
-</user_question>
-
-Answer directly:`,
+        input: `You are the "PauraX Guide"...`, // Your full, detailed context prompt
         parameters: { max_new_tokens: 100 },
         project_id: project_id,
     };
@@ -83,21 +60,46 @@ Answer directly:`,
     }
 }
 
-// --- NEW: High-Fidelity Mock Visual Recognition Service ---
+// --- MOCK VISUAL RECOGNITION ---
 async function analyzeImageMock(imageUrl) {
     console.log(`Simulating analysis for image URL: ${imageUrl}`);
-    
-    // This function simulates a network delay, making the demo feel more real.
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for 2 seconds
-
-    // Here we define our mock results. This is what the judges will see.
-    const detectedObjects = ["street light", "road", "public space", "pothole"];
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate delay
+    const detectedObjects = ["pothole", "road", "asphalt"];
     console.log("Mock analysis complete. Detected:", detectedObjects);
 
-    return `Thank you for your submission. I've analyzed the image and detected the following: **${detectedObjects.join(', ')}**. A new micro-project is being created for this issue.`;
+    // Return an object with both a message and the specific issue type
+    if (detectedObjects.includes("pothole")) {
+        return {
+            message: "Thank you for highlighting this! I've identified a *pothole* that needs repair.",
+            issueType: "Pothole"
+        };
+    } else {
+        return {
+            message: `Thank you... I've detected: ${detectedObjects.join(', ')}.`,
+            issueType: "General Issue"
+        };
+    }
 }
 
-// --- TWILIO SERVICE ---
+// --- DATABASE & TWILIO FUNCTIONS ---
+async function saveIssueToDB(issueType, location) {
+    try {
+        const dbRaw = fs.readFileSync(dbPath, 'utf-8');
+        const dbData = JSON.parse(dbRaw);
+        const newIssue = {
+            id: Date.now(),
+            type: issueType,
+            location: location,
+            timestamp: new Date().toISOString()
+        };
+        dbData.issues.push(newIssue);
+        fs.writeFileSync(dbPath, JSON.stringify(dbData, null, 2));
+        console.log("Successfully saved new issue to db.json:", newIssue);
+    } catch (error) {
+        console.error("Error saving to db.json:", error);
+    }
+}
+
 async function sendWhatsAppMessage(to, message) {
     try {
         await twilioClient.messages.create({ body: message, from: twilioNumber, to: to });
@@ -107,24 +109,45 @@ async function sendWhatsAppMessage(to, message) {
     }
 }
 
-// --- THE WEBHOOK ---
+// --- THE COMPLETE WEBHOOK LOGIC ---
 app.post('/webhook', async (req, res) => {
     const userNumber = req.body.From;
     const userMessage = (req.body.Body || '').toLowerCase();
-    let responseMessage;
-
-    if (req.body.NumMedia > 0) {
-        const imageUrl = req.body.MediaUrl0;
-        responseMessage = await analyzeImageMock(imageUrl); // Use our new mock function
-    } else if (['hi', 'hello', 'menu'].includes(userMessage)) {
-        responseMessage = "Welcome to PauraX! How can I help you today? Reply with a number to get started:\n\n1. See top community issues\n2. Learn how to submit a photo of an issue\n\nOr just ask me any question!";
-    } else if (['issues', 'top', '1'].some(keyword => userMessage.includes(keyword))) {
-        responseMessage = "My AI has analyzed all recent citizen reports. This week's top 3 issues have been ranked and are now open for investment:\n1. Pothole repairs on 2nd Ave\n2. Better lighting in City Park\n3. Waste management near the market.";
-    } else {
-        responseMessage = await getAIResponse(req.body.Body);
+    
+    // --- State Management: Check if we are waiting for a pin code ---
+    if (userState[userNumber] && userState[userNumber].awaiting === 'pincode') {
+        const location = req.body.Body; // The user's reply is the location
+        const issueType = userState[userNumber].issueType;
+        
+        await saveIssueToDB(issueType, location);
+        await sendWhatsAppMessage(userNumber, `Got it. Your report for the *${issueType}* issue in *${location}* has been logged. Thank you for being an active citizen!`);
+        
+        delete userState[userNumber]; // Clear the user's state
+        res.status(200).send('<Response/>');
+        return;
     }
 
-    await sendWhatsAppMessage(userNumber, responseMessage);
+    // --- Standard Message Handling ---
+    if (req.body.NumMedia > 0) {
+        const imageUrl = req.body.MediaUrl0;
+        const analysis = await analyzeImageMock(imageUrl);
+        
+        // Send the analysis first
+        await sendWhatsAppMessage(userNumber, analysis.message);
+        
+        // THEN, ask for the location and set the user's state in memory
+        await sendWhatsAppMessage(userNumber, "To categorize this issue, could you please reply with your current pin code or neighborhood name?");
+        userState[userNumber] = { awaiting: 'pincode', issueType: analysis.issueType };
+
+    } else if (['hi', 'hello', 'menu'].includes(userMessage)) {
+        await sendWhatsAppMessage(userNumber, "Welcome to PauraX! How can I help you today? Reply with a number to get started:\n\n1. See top community issues\n2. Learn how to submit a photo of an issue\n\nOr just ask me any question!");
+    } else if (['issues', 'top', '1'].some(keyword => userMessage.includes(keyword))) {
+        await sendWhatsAppMessage(userNumber, "My AI has analyzed all recent citizen reports. This week's top 3 issues have been ranked and are now open for investment:\n1. Pothole repairs on 2nd Ave\n2. Better lighting in City Park\n3. Waste management near the market.");
+    } else {
+        const aiResponse = await getAIResponse(req.body.Body);
+        await sendWhatsAppMessage(userNumber, aiResponse);
+    }
+
     res.status(200).send('<Response/>');
 });
 
