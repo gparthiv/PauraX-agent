@@ -1,151 +1,97 @@
 const express = require('express');
-const axios = require('axios');
 require('dotenv').config();
-const twilio = require('twilio');
-const fs = require('fs'); // Using the File System module to read/write our db
+
+// Import our new service modules
+const watsonxService = require('./services/watsonx.service');
+const twilioService = require('./services/twilio.service');
+const dbService = require('./services/db.service');
 
 const app = express();
 const PORT = 3000;
 
-// --- Initialize Clients, Constants, and "Memory" ---
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const twilioClient = new twilio(accountSid, authToken);
-const twilioNumber = 'whatsapp:+14155238886';
-const dbPath = './db.json'; // The path to our mock database
-
 // Simple in-memory "short-term memory" to track conversations
 const userState = {};
+
+const mainMenuMessage = "Welcome to PauraX! How can I help you today?\n\n1. See top community issues\n2. Learn how to submit an issue\n\nTo see your Civic Coin balance and project impact, visit your personal wallet at:\nhttps://paurax.vercel.app";
+const topIssuesMessage = "Here are the top community issues you can support:\n\n1. Pothole repairs on 2nd Ave\n(Est. Cost: *₹8,000*\nReward: *500* Civic Coins)\n2. Better lighting in City Park\n(Est. Cost: *₹20,000*\nReward: *1200* Civic Coins)\n3. Waste management near the market\n(Est. Cost: *₹15,000*\nReward: *800* Civic Coins)\n\nTo invest, reply with 'invest' and the number (e.g., *invest 1*).\n\nType /back to return to the main menu.";
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- IBM AUTHENTICATION ---
-async function getIAMToken(apiKey) {
-    if (!apiKey) {
-        console.error("ERROR: API Key not provided for IAM Token generation.");
-        return null;
-    }
-    const url = 'https://iam.cloud.ibm.com/identity/token';
-    const data = `grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey=${apiKey}`;
-    try {
-        const response = await axios.post(url, data, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-        return response.data.access_token;
-    } catch (error) {
-        console.error("Error fetching IAM token:", error.response ? error.response.data : error.message);
-        return null;
-    }
-}
-
-// --- IBM WATSONX.AI SERVICE ---
-async function getAIResponse(userMessage) {
-    const iamToken = await getIAMToken(process.env.WATSONX_API_KEY);
-    if (!iamToken) return "Sorry, I couldn't authenticate with IBM Cloud for text generation.";
-
-    const watsonx_url = 'https://us-south.ml.cloud.ibm.com/ml/v1-beta/generation/text?version=2024-03-19';
-    const project_id = process.env.WATSONX_PROJECT_ID;
-    const payload = {
-        model_id: "ibm/granite-13b-instruct-v2",
-        input: `You are the "PauraX Guide"...`, // Your full, detailed context prompt
-        parameters: { max_new_tokens: 100 },
-        project_id: project_id,
-    };
-    const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${iamToken}` };
-    try {
-        const response = await axios.post(watsonx_url, payload, { headers });
-        return response.data.results[0].generated_text.trim();
-    } catch (error) {
-        console.error("Error calling watsonx.ai API:", error.response ? error.response.data : error.message);
-        return "Sorry, I'm having trouble thinking right now.";
-    }
-}
-
-// --- MOCK VISUAL RECOGNITION ---
-async function analyzeImageMock(imageUrl) {
-    console.log(`Simulating analysis for image URL: ${imageUrl}`);
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate delay
-    const detectedObjects = ["pothole", "road", "asphalt"];
-    console.log("Mock analysis complete. Detected:", detectedObjects);
-
-    // Return an object with both a message and the specific issue type
-    if (detectedObjects.includes("pothole")) {
-        return {
-            message: "Thank you for highlighting this! I've identified a *pothole* that needs repair.",
-            issueType: "Pothole"
-        };
-    } else {
-        return {
-            message: `Thank you... I've detected: ${detectedObjects.join(', ')}.`,
-            issueType: "General Issue"
-        };
-    }
-}
-
-// --- DATABASE & TWILIO FUNCTIONS ---
-async function saveIssueToDB(issueType, location) {
-    try {
-        const dbRaw = fs.readFileSync(dbPath, 'utf-8');
-        const dbData = JSON.parse(dbRaw);
-        const newIssue = {
-            id: Date.now(),
-            type: issueType,
-            location: location,
-            timestamp: new Date().toISOString()
-        };
-        dbData.issues.push(newIssue);
-        fs.writeFileSync(dbPath, JSON.stringify(dbData, null, 2));
-        console.log("Successfully saved new issue to db.json:", newIssue);
-    } catch (error) {
-        console.error("Error saving to db.json:", error);
-    }
-}
-
-async function sendWhatsAppMessage(to, message) {
-    try {
-        await twilioClient.messages.create({ body: message, from: twilioNumber, to: to });
-        console.log(`Successfully sent message to ${to}`);
-    } catch (error) {
-        console.error(`Failed to send message to ${to}:`, error);
-    }
-}
-
-// --- THE COMPLETE WEBHOOK LOGIC ---
+// --- THE WEBHOOK LOGIC ---
 app.post('/webhook', async (req, res) => {
     const userNumber = req.body.From;
-    const userMessage = (req.body.Body || '').toLowerCase();
+    const userMessage = (req.body.Body || '').toLowerCase().trim();
     
-    // --- State Management: Check if we are waiting for a pin code ---
-    if (userState[userNumber] && userState[userNumber].awaiting === 'pincode') {
-        const location = req.body.Body; // The user's reply is the location
-        const issueType = userState[userNumber].issueType;
-        
-        await saveIssueToDB(issueType, location);
-        await sendWhatsAppMessage(userNumber, `Got it. Your report for the *${issueType}* issue in *${location}* has been logged. Thank you for being an active citizen!`);
-        
-        delete userState[userNumber]; // Clear the user's state
+    // Universal "back" command
+    if (userMessage === '/back') {
+        delete userState[userNumber];
+        await twilioService.sendWhatsAppMessage(userNumber, mainMenuMessage);
         res.status(200).send('<Response/>');
         return;
     }
 
-    // --- Standard Message Handling ---
+    // State Management Logic
+    if (userState[userNumber]) {
+        const state = userState[userNumber];
+        if (state.awaiting === 'pincode') {
+            const location = req.body.Body;
+            await dbService.saveIssueToDB(state.issueType, location);
+            await twilioService.sendWhatsAppMessage(userNumber, `Got it. Your report for the *${state.issueType}* issue in *${location}* has been logged. Thank you!`);
+            // NEW: Add a follow-up message to guide the user
+            await twilioService.sendWhatsAppMessage(userNumber, "You can now type `/back` to return to the main menu or ask another question.");
+            delete userState[userNumber];
+        } else if (state.awaiting === 'location_for_issues') {
+            await twilioService.sendWhatsAppMessage(userNumber, `Thank you. Here are the top issues reported in the *${req.body.Body}* area:`);
+            await twilioService.sendWhatsAppMessage(userNumber, topIssuesMessage);
+            userState[userNumber] = { awaiting: 'investment_confirmation' };
+        } else if (state.awaiting === 'investment_confirmation') {
+            const projectNumber = parseInt(userMessage.replace('invest', '').trim());
+            if (projectNumber >= 1 && projectNumber <= 3) {
+                const projects = [
+                    { name: "Pothole repairs on 2nd Ave", cost: 8000, coins: 500 },
+                    { name: "Better lighting in City Park", cost: 20000, coins: 1200 },
+                    { name: "Waste management near the market", cost: 15000, coins: 800 }
+                ];
+                const selectedProject = projects[projectNumber - 1];
+                userState[userNumber] = { awaiting: 'contribution_amount', project: selectedProject };
+                await twilioService.sendWhatsAppMessage(userNumber, `You've selected: *${selectedProject.name}*. How much would you like to contribute in Rupees (₹)?`);
+            } else {
+                await twilioService.sendWhatsAppMessage(userNumber, "Invalid selection. Please type 'invest 1', 'invest 2', or 'invest 3'.\n\nType /back to return to the main menu.");
+            }
+        } else if (state.awaiting === 'contribution_amount') {
+            const contribution = parseFloat(userMessage);
+            const project = state.project;
+            if (!isNaN(contribution) && contribution > 0) {
+                const rewardedCoins = Math.floor((contribution / project.cost) * project.coins);
+                const paymentMessage = `Thank you for your contribution of *₹${contribution}*! You will be rewarded with *${rewardedCoins} Civic Coins*.\n\nTo complete your investment, please click this secure link:\nhttps://paurax.com/pay/demo123\n(This is a demo link).\n\nType /back to return to the main menu.`;
+                await twilioService.sendWhatsAppMessage(userNumber, paymentMessage);
+                delete userState[userNumber];
+            } else {
+                await twilioService.sendWhatsAppMessage(userNumber, "Please enter a valid number for your contribution amount.");
+            }
+        }
+        res.status(200).send('<Response/>');
+        return;
+    }
+
+    // Standard Message Handling
     if (req.body.NumMedia > 0) {
         const imageUrl = req.body.MediaUrl0;
-        const analysis = await analyzeImageMock(imageUrl);
-        
-        // Send the analysis first
-        await sendWhatsAppMessage(userNumber, analysis.message);
-        
-        // THEN, ask for the location and set the user's state in memory
-        await sendWhatsAppMessage(userNumber, "To categorize this issue, could you please reply with your current pin code or neighborhood name?");
+        const analysis = await watsonxService.analyzeImageMock(imageUrl);
+        await twilioService.sendWhatsAppMessage(userNumber, analysis.message);
+        await twilioService.sendWhatsAppMessage(userNumber, "To categorize this issue, could you please reply with your current pin code or neighborhood name?");
         userState[userNumber] = { awaiting: 'pincode', issueType: analysis.issueType };
-
     } else if (['hi', 'hello', 'menu'].includes(userMessage)) {
-        await sendWhatsAppMessage(userNumber, "Welcome to PauraX! How can I help you today? Reply with a number to get started:\n\n1. See top community issues\n2. Learn how to submit a photo of an issue\n\nOr just ask me any question!");
-    } else if (['issues', 'top', '1'].some(keyword => userMessage.includes(keyword))) {
-        await sendWhatsAppMessage(userNumber, "My AI has analyzed all recent citizen reports. This week's top 3 issues have been ranked and are now open for investment:\n1. Pothole repairs on 2nd Ave\n2. Better lighting in City Park\n3. Waste management near the market.");
+        await twilioService.sendWhatsAppMessage(userNumber, mainMenuMessage);
+    } else if (userMessage === '1' || userMessage.includes('issues')) {
+        await twilioService.sendWhatsAppMessage(userNumber, "To find the top issues near you, please reply with your pin code or neighborhood name.");
+        userState[userNumber] = { awaiting: 'location_for_issues' };
+    } else if (userMessage === '2') {
+        await twilioService.sendWhatsAppMessage(userNumber, "To submit an issue, simply send a clear photo of the problem (like a pothole or broken street light). I will analyze it and guide you through the next steps!");
     } else {
-        const aiResponse = await getAIResponse(req.body.Body);
-        await sendWhatsAppMessage(userNumber, aiResponse);
+        const aiResponse = await watsonxService.getAIResponse(req.body.Body);
+        await twilioService.sendWhatsAppMessage(userNumber, aiResponse);
     }
 
     res.status(200).send('<Response/>');
