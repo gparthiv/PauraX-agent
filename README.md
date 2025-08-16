@@ -1,7 +1,8 @@
 🤖 PauraX Agent Backend
 
 The official backend service for PauraX — an AI-powered civic investment and rewards platform built for the IBM TechXchange 2025 Pre-conference watsonx Hackathon.
-This repository contains the backend code for the WhatsApp AI Agent, which powers real-time conversations, issue reporting, and civic engagement.
+
+📱 Powers the WhatsApp AI Agent, enabling conversational civic engagement with IBM watsonx.
 
 🔗 Live Frontend Demo → paurax.vercel.app
 
