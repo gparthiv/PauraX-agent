@@ -1,63 +1,106 @@
-PauraX Agent Backend
-The official backend service for PauraX, an AI-powered civic investment and rewards platform built for the IBM TechXchange 2025 Pre-conference watsonx Hackathon.
+🤖 PauraX Agent Backend
 
-➡️ Live Frontend Demo: https://paurax.vercel.app
+The official backend service for PauraX — an AI-powered civic investment and rewards platform built for the IBM TechXchange 2025 Pre-conference watsonx Hackathon.
+This repository contains the backend code for the WhatsApp AI Agent, which powers real-time conversations, issue reporting, and civic engagement.
+
+🔗 Live Frontend Demo → paurax.vercel.app
 
 💡 About the Name: PauraX
-The name 'PauraX' is a fusion of two concepts. 'Paur' (पौर) is a Sanskrit word meaning 'citizen' or 'urbanite,' reflecting our mission to empower the people of the city. The 'X' is inspired by IBM watsonx, representing the exponential power of AI to amplify and accelerate this civic engagement.
+
+Paur (पौर) → A Sanskrit word meaning citizen or urbanite, reflecting our mission to empower the people of the city.
+
+X → Inspired by IBM watsonx, representing the exponential power of AI in civic engagement.
 
 🎯 The Problem
-In India, the tax base for public development is narrow, placing disproportionate pressure on the middle class. PauraX addresses this by allowing all citizens to invest in hyperlocal public goods (e.g., park benches, solar lights). In return for real-currency contributions, users receive non-monetary "Civic Coins," encouraging civic pride and decentralizing community improvement with full transparency.
+
+In India, the tax base for public development is narrow, placing disproportionate pressure on the middle class.
+PauraX addresses this by enabling all citizens to invest in hyperlocal public goods (e.g., park benches, solar lights).
+
+💰 In return for real-currency contributions, users receive non-monetary Civic Coins → fostering civic pride, transparency, and decentralized community improvement.
 
 ✨ The Solution
-PauraX consists of a WhatsApp AI Agent and a web-based Civic Wallet. This repository contains the backend code for the agent, which acts as the core intelligence. Leveraging IBM watsonx.ai and Granite foundation models, the agent understands user queries, provides project information, and guides users through issue reporting and contributions via the highly accessible WhatsApp interface.
+
+PauraX consists of:
+
+📱 WhatsApp AI Agent (this repo) → Conversational interface for reporting issues, funding projects, and earning Civic Coins.
+
+💳 Civic Wallet (frontend) → A visual dashboard to track contributions and impact.
+
+This backend integrates IBM watsonx.ai + Granite foundation models to understand user queries, analyze photos, and guide contributions.
 
 🚀 Core Features
-Conversational AI: Utilizes IBM's Granite Instruct v2 model on watsonx.ai for rich, contextual conversations about projects and the Civic Coin reward system.
 
-Intelligent Issue Reporting via Photo: Users can send a photo of a civic issue. The agent performs a simulated analysis (designed for IBM's vision models) to identify and log the problem.
+💬 Conversational AI
+Powered by IBM Granite Instruct v2 on watsonx.ai → contextual chats about projects & rewards.
 
-Personalized, Location-Based Suggestions: Asks for the user's location to simulate how IBM watsonx.ai can provide a personalized list of nearby projects.
+📸 Photo-based Issue Reporting
+Users upload a civic issue photo → the agent simulates AI-powered issue detection & logging.
 
-Simulated Investment Flow: A complete, multi-step conversational flow for users to select a project, specify a contribution amount (₹), and receive a proportional Civic Coin reward estimate.
+📍 Personalized Suggestions
+Requests user location → returns nearby civic projects for investment.
 
-Stateful Conversations: An in-memory state machine tracks the user's journey, allowing for multi-step interactions like reporting an issue and then providing a location.
+💰 Simulated Investment Flow
+Multi-step WhatsApp chat → select project → contribute in ₹ → get estimated Civic Coins.
 
-Mock Database: Persists user-reported issues to a db.json file to simulate a real database for the hackathon prototype.
+🔄 Stateful Conversations
+Tracks user journey across multiple steps (report → location → funding).
+
+🗄️ Mock Database
+Issues stored in db.json → simulating persistence for the hackathon prototype.
 
 🛠️ Tech Stack
-AI Platform: IBM watsonx.ai
 
-Foundation Model: IBM Granite Instruct v2
+☁️ AI Platform: IBM watsonx.ai
 
-Runtime: Node.js & Express.js
+🧠 Foundation Model: IBM Granite Instruct v2
 
-Messaging API: Twilio for WhatsApp
+⚡ Runtime: Node.js + Express.js
 
-Core Libraries: axios, dotenv, twilio
+📲 Messaging API: Twilio (WhatsApp Sandbox)
 
-⚙️ Setup and Usage
-Prerequisites
+📦 Core Libraries: axios, dotenv, twilio
+
+⚙️ Setup & Usage
+✅ Prerequisites
+
 Node.js (v18+)
 
-An IBM Cloud account with watsonx.ai credentials
+IBM Cloud account (watsonx.ai credentials)
 
-A Twilio account with a configured WhatsApp Sandbox
+Twilio account with WhatsApp Sandbox enabled
 
-Installation & Running
-Clone the repository and install dependencies:
-
+🔧 Installation
+# Clone the repository
 git clone https://github.com/your-username/PauraX-agent.git
 cd PauraX-agent
+
+# Install dependencies
 npm install
 
-Create a .env file and add your API keys.
+🔑 Configure Environment
 
-Start the server:
+Create a .env file and add your IBM & Twilio credentials.
 
+▶️ Run the Server
 node index.js
 
-Expose the server to the internet using ngrok http 3000 and update the webhook URL in your Twilio Sandbox settings.
+
+Expose server with ngrok:
+
+ngrok http 3000
+
+
+Update your Twilio Sandbox webhook URL with the ngrok link.
 
 🌐 Frontend Repository
-The code for the React-based Civic Wallet can be found here: https://github.com/gparthiv/paurax-frontend
+
+The React-based Civic Wallet (frontend) is available here:
+👉 paurax-frontend
+
+🤝 Contributing
+
+We welcome feedback and contributions! Fork the repo, create a branch, and open a PR 🚀.
+
+📜 License
+
+MIT License © 2025 PauraX
