@@ -89,7 +89,6 @@ async function analyzeImageMock(imageUrl) {
     }
 }
 
-// Export the functions to be used in other files
 module.exports = {
     getAIResponse,
     analyzeImageMock
