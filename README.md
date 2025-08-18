@@ -83,4 +83,11 @@ cd PauraX-agent
 npm install
 ```
 
-## FrontEnd Repo: https://github.com/gparthiv/paurax-frontend
+---
+
+## 🤖 Frontend Repository
+
+The **React based CivicWallet site (frontend)** is available here:
+👉 [PauraX-CivicWallet](https://github.com/gparthiv/paurax-frontend)
+
+---
