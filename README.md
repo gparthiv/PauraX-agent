@@ -81,3 +81,6 @@ cd PauraX-agent
 
 # Install dependencies
 npm install
+```
+
+## FrontEnd Repo: https://github.com/gparthiv/paurax-frontend
